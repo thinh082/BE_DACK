@@ -52,14 +52,14 @@ public partial class DACKContext : DbContext
     {
         modelBuilder.Entity<AccountType>(entity =>
         {
-            entity.HasKey(e => e.Id).HasName("PK__AccountT__3214EC07FD05CC48");
+            entity.HasKey(e => e.Id).HasName("PK__AccountT__3214EC073E094E2C");
 
             entity.Property(e => e.TenLoaiTaiKhoan).HasMaxLength(100);
         });
 
         modelBuilder.Entity<Category>(entity =>
         {
-            entity.HasKey(e => e.Id).HasName("PK__Categori__3214EC074167CA70");
+            entity.HasKey(e => e.Id).HasName("PK__Categori__3214EC071A0126D0");
 
             entity.Property(e => e.TenDanhMucSp)
                 .HasMaxLength(255)
@@ -68,9 +68,9 @@ public partial class DACKContext : DbContext
 
         modelBuilder.Entity<Customer>(entity =>
         {
-            entity.HasKey(e => e.Id).HasName("PK__Customer__3214EC07C6BB871E");
+            entity.HasKey(e => e.Id).HasName("PK__Customer__3214EC071DC8992C");
 
-            entity.HasIndex(e => e.Email, "UQ__Customer__A9D10534AE8E2F66").IsUnique();
+            entity.HasIndex(e => e.Email, "UQ__Customer__A9D10534FD654FE8").IsUnique();
 
             entity.Property(e => e.DiaChi).HasMaxLength(255);
             entity.Property(e => e.Email).HasMaxLength(255);
@@ -87,7 +87,7 @@ public partial class DACKContext : DbContext
 
         modelBuilder.Entity<LienHe>(entity =>
         {
-            entity.HasKey(e => e.Id).HasName("PK__LienHe__3214EC07B68F3F10");
+            entity.HasKey(e => e.Id).HasName("PK__LienHe__3214EC074B5D986B");
 
             entity.ToTable("LienHe");
 
@@ -100,7 +100,7 @@ public partial class DACKContext : DbContext
 
         modelBuilder.Entity<Order>(entity =>
         {
-            entity.HasKey(e => e.Id).HasName("PK__Orders__3214EC07FDD2F66B");
+            entity.HasKey(e => e.Id).HasName("PK__Orders__3214EC07F4939770");
 
             entity.Property(e => e.NgayTaoDonHang).HasColumnType("datetime");
             entity.Property(e => e.TongGiaTriDonHang).HasColumnType("decimal(10, 2)");
@@ -113,7 +113,7 @@ public partial class DACKContext : DbContext
 
         modelBuilder.Entity<OrderDetail>(entity =>
         {
-            entity.HasKey(e => e.Id).HasName("PK__OrderDet__3214EC07A14385F8");
+            entity.HasKey(e => e.Id).HasName("PK__OrderDet__3214EC07D3935592");
 
             entity.Property(e => e.Gia).HasColumnType("decimal(10, 2)");
             entity.Property(e => e.SoLuongSp).HasColumnName("SoLuongSP");
@@ -130,7 +130,7 @@ public partial class DACKContext : DbContext
 
         modelBuilder.Entity<Payment>(entity =>
         {
-            entity.HasKey(e => e.Id).HasName("PK__Payments__3214EC070FF9F39C");
+            entity.HasKey(e => e.Id).HasName("PK__Payments__3214EC07633E381E");
 
             entity.Property(e => e.NgayThanhToan).HasColumnType("datetime");
             entity.Property(e => e.PhuongThucThanhToan).HasMaxLength(50);
@@ -146,12 +146,9 @@ public partial class DACKContext : DbContext
 
         modelBuilder.Entity<Product>(entity =>
         {
-            entity.HasKey(e => e.Id).HasName("PK__Products__3214EC079D419669");
+            entity.HasKey(e => e.Id).HasName("PK__Products__3214EC075341894A");
 
             entity.Property(e => e.Gia).HasColumnType("decimal(10, 2)");
-            entity.Property(e => e.ImageUrl)
-                .HasMaxLength(255)
-                .IsUnicode(false);
             entity.Property(e => e.TenSp)
                 .HasMaxLength(255)
                 .HasColumnName("TenSP");
@@ -163,7 +160,7 @@ public partial class DACKContext : DbContext
 
         modelBuilder.Entity<ProductImage>(entity =>
         {
-            entity.HasKey(e => e.Id).HasName("PK__ProductI__3214EC075E34862E");
+            entity.HasKey(e => e.Id).HasName("PK__ProductI__3214EC07F0AC15F9");
 
             entity.HasOne(d => d.Product).WithMany(p => p.ProductImages)
                 .HasForeignKey(d => d.ProductId)
@@ -173,20 +170,20 @@ public partial class DACKContext : DbContext
 
         modelBuilder.Entity<ProductPromotion>(entity =>
         {
-            entity.HasKey(e => e.Id).HasName("PK__ProductP__3214EC076546C39A");
+            entity.HasKey(e => e.Id).HasName("PK__ProductP__3214EC07CAAB8C2D");
 
             entity.HasOne(d => d.Product).WithMany(p => p.ProductPromotions)
                 .HasForeignKey(d => d.ProductId)
-                .HasConstraintName("FK__ProductPr__Produ__49C3F6B7");
+                .HasConstraintName("FK__ProductPr__Produ__4AB81AF0");
 
             entity.HasOne(d => d.Promotion).WithMany(p => p.ProductPromotions)
                 .HasForeignKey(d => d.PromotionId)
-                .HasConstraintName("FK__ProductPr__Promo__4AB81AF0");
+                .HasConstraintName("FK__ProductPr__Promo__49C3F6B7");
         });
 
         modelBuilder.Entity<ProductReview>(entity =>
         {
-            entity.HasKey(e => e.Id).HasName("PK__ProductR__3214EC0705512A1E");
+            entity.HasKey(e => e.Id).HasName("PK__ProductR__3214EC07D575EE57");
 
             entity.Property(e => e.DiemDg).HasColumnName("DiemDG");
             entity.Property(e => e.NgayDg)
@@ -207,7 +204,7 @@ public partial class DACKContext : DbContext
 
         modelBuilder.Entity<Promotion>(entity =>
         {
-            entity.HasKey(e => e.Id).HasName("PK__Promotio__3214EC07B9165E75");
+            entity.HasKey(e => e.Id).HasName("PK__Promotio__3214EC07ECD44FDD");
 
             entity.Property(e => e.MoTa).HasMaxLength(255);
             entity.Property(e => e.PhanTramGiam).HasColumnType("decimal(5, 2)");
@@ -216,7 +213,7 @@ public partial class DACKContext : DbContext
 
         modelBuilder.Entity<ShoppingCart>(entity =>
         {
-            entity.HasKey(e => e.Id).HasName("PK__Shopping__3214EC07919CA97F");
+            entity.HasKey(e => e.Id).HasName("PK__Shopping__3214EC076E20EB7E");
 
             entity.ToTable("ShoppingCart");
 
@@ -227,7 +224,7 @@ public partial class DACKContext : DbContext
 
         modelBuilder.Entity<ShoppingCartDetail>(entity =>
         {
-            entity.HasKey(e => e.Id).HasName("PK__Shopping__3214EC078AD6DC80");
+            entity.HasKey(e => e.Id).HasName("PK__Shopping__3214EC070E223317");
 
             entity.Property(e => e.SoLuongTrongGh).HasColumnName("SoLuongTrongGH");
 
@@ -242,7 +239,7 @@ public partial class DACKContext : DbContext
 
         modelBuilder.Entity<TonKhoSummary>(entity =>
         {
-            entity.HasKey(e => e.Id).HasName("PK__TonKhoSu__3214EC07593EA4FA");
+            entity.HasKey(e => e.Id).HasName("PK__TonKhoSu__3214EC078D60EA23");
 
             entity.ToTable("TonKhoSummary");
 
