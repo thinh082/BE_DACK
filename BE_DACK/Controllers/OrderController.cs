@@ -1,4 +1,5 @@
-﻿using BE_DACK.Models.Entities;
+﻿using BE_DACK.Helpers;
+using BE_DACK.Models.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -58,15 +59,25 @@ namespace BE_DACK.Controllers
                     }
                 }
 
-                // Tính tổng giá trị đơn hàng
-                decimal tongGiaTri = gioHang.ShoppingCartDetails.Sum(d => d.SoLuongTrongGh.GetValueOrDefault() * d.Product.Gia);
+                // Tính tổng giá trị đơn hàng SAU KHUYẾN MÃI
+                decimal tongGiaTriGoc = 0;
+                decimal tongGiaTriSauKhuyenMai = 0;
 
-                // Tạo đơn hàng mới
+                foreach (var detail in gioHang.ShoppingCartDetails)
+                {
+                    var giaGoc = detail.Product.Gia;
+                    var giaSauKhuyenMai = await PriceHelper.TinhGiaSauKhuyenMai(_context, detail.ProductId.Value, giaGoc);
+
+                    tongGiaTriGoc += detail.SoLuongTrongGh.GetValueOrDefault() * giaGoc;
+                    tongGiaTriSauKhuyenMai += detail.SoLuongTrongGh.GetValueOrDefault() * giaSauKhuyenMai;
+                }
+
+                // Tạo đơn hàng mới với giá SAU KHUYẾN MÃI
                 var donHang = new Order
                 {
                     CustomerId = userId,
                     NgayTaoDonHang = DateTime.Now,
-                    TongGiaTriDonHang = tongGiaTri,
+                    TongGiaTriDonHang = tongGiaTriSauKhuyenMai, // Lưu giá sau khuyến mãi
                     TrangThai = "Chờ xác nhận"
                 };
 
@@ -76,12 +87,14 @@ namespace BE_DACK.Controllers
                 // Tạo chi tiết đơn hàng và cập nhật tồn kho
                 foreach (var detail in gioHang.ShoppingCartDetails)
                 {
+                    var giaSauKhuyenMai = await PriceHelper.TinhGiaSauKhuyenMai(_context, detail.ProductId.Value, detail.Product.Gia);
+
                     var orderDetail = new OrderDetail
                     {
                         OrderId = donHang.Id,
                         ProductId = detail.ProductId,
                         SoLuongSp = detail.SoLuongTrongGh.GetValueOrDefault(),
-                        Gia = detail.Product.Gia,
+                        Gia = giaSauKhuyenMai, // Lưu giá sau khuyến mãi
                         TrangThai = "Chờ xác nhận"
                     };
 
@@ -103,7 +116,9 @@ namespace BE_DACK.Controllers
                     {
                         orderId = donHang.Id,
                         ngayTao = donHang.NgayTaoDonHang,
-                        tongGiaTri = donHang.TongGiaTriDonHang,
+                        tongGiaTriGoc = tongGiaTriGoc,
+                        tongGiaTriSauKhuyenMai = tongGiaTriSauKhuyenMai,
+                        tietKiem = tongGiaTriGoc - tongGiaTriSauKhuyenMai,
                         trangThai = donHang.TrangThai
                     }
                 });
@@ -118,6 +133,7 @@ namespace BE_DACK.Controllers
                 });
             }
         }
+
 
         // Lấy chi tiết đơn hàng
         [HttpGet("LayChiTietDonHang/{orderId}")]
@@ -300,6 +316,71 @@ namespace BE_DACK.Controllers
                 {
                     success = false,
                     message = "Lỗi khi hủy đơn hàng.",
+                    error = ex.Message
+                });
+            }
+        }
+
+        // Admin: Lấy danh sách tất cả đơn hàng (cho admin)
+        [HttpGet("DanhSachDonHangAdmin")]
+        [Authorize]
+        public async Task<IActionResult> DanhSachDonHangAdmin()
+        {
+            try
+            {
+                // Kiểm tra quyền admin
+                var isAdminClaim = User.Claims.FirstOrDefault(c => c.Type == "isAdmin");
+                if (isAdminClaim == null || isAdminClaim.Value != "True")
+                {
+                    return StatusCode(403, new { success = false, message = "Bạn không có quyền truy cập chức năng này" });
+                }
+
+                var donHangs = await _context.Orders
+                    .Include(o => o.Customer)
+                    .Include(o => o.OrderDetails)
+                        .ThenInclude(d => d.Product)
+                    .OrderByDescending(o => o.NgayTaoDonHang)
+                    .Select(o => new
+                    {
+                        id = o.Id,
+                        customerId = o.CustomerId,
+                        khachHang = o.Customer != null ? new
+                        {
+                            id = o.Customer.Id,
+                            hoTen = o.Customer.HoTen,
+                            email = o.Customer.Email,
+                            sdt = o.Customer.Sdt,
+                            diaChi = o.Customer.DiaChi
+                        } : null,
+                        ngayTao = o.NgayTaoDonHang,
+                        tongGiaTri = o.TongGiaTriDonHang,
+                        trangThai = o.TrangThai,
+                        soLuongSanPham = o.OrderDetails.Count,
+                        chiTietSanPham = o.OrderDetails.Select(d => new
+                        {
+                            productId = d.ProductId,
+                            tenSp = d.Product != null ? d.Product.TenSp : "N/A",
+                            soLuong = d.SoLuongSp,
+                            gia = d.Gia,
+                            thanhTien = d.SoLuongSp * d.Gia
+                        }).ToList()
+                    })
+                    .ToListAsync();
+
+                return Ok(new
+                {
+                    success = true,
+                    message = "Lấy danh sách đơn hàng thành công",
+                    data = donHangs,
+                    total = donHangs.Count
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    success = false,
+                    message = "Lỗi khi lấy danh sách đơn hàng",
                     error = ex.Message
                 });
             }

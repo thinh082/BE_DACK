@@ -412,6 +412,171 @@ namespace BE_DACK.Controllers
         }
 
 
+        // Admin: Lấy danh sách tất cả người dùng
+        [HttpGet("DanhSachNguoiDung")]
+        [Authorize]
+        public async Task<IActionResult> DanhSachNguoiDung()
+        {
+            try
+            {
+                // Kiểm tra quyền admin
+                var isAdminClaim = User.Claims.FirstOrDefault(c => c.Type == "isAdmin");
+                if (isAdminClaim == null || isAdminClaim.Value != "True")
+                {
+                    return StatusCode(403, new { success = false, message = "Bạn không có quyền truy cập chức năng này" });
+                }
+
+                var customers = await _context.Customers
+                    .Include(c => c.IdAccountTypesNavigation)
+                    .Select(c => new
+                    {
+                        id = c.Id,
+                        hoTen = c.HoTen,
+                        email = c.Email,
+                        sdt = c.Sdt,
+                        diaChi = c.DiaChi,
+                        isAdmin = c.IsAdmin,
+                        loaiTaiKhoan = c.IdAccountTypesNavigation != null ? c.IdAccountTypesNavigation.TenLoaiTaiKhoan : null
+                    })
+                    .ToListAsync();
+
+                return Ok(new
+                {
+                    success = true,
+                    message = "Lấy danh sách người dùng thành công",
+                    data = customers,
+                    total = customers.Count
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    success = false,
+                    message = "Lỗi khi lấy danh sách người dùng",
+                    error = ex.Message
+                });
+            }
+        }
+
+        // Admin: Tạo hoặc cập nhật người dùng
+        [HttpPost("ThemNguoiDung")]
+        [Authorize]
+        public IActionResult ThemNguoiDung([FromBody] ThemNguoiDungRequest request)
+        {
+            try
+            {
+                var isAdminClaim = User.Claims.FirstOrDefault(c => c.Type == "isAdmin");
+                if (isAdminClaim == null || isAdminClaim.Value != "True")
+                {
+                    return Forbid();
+                }
+
+                if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.HoTen))
+                {
+                    return BadRequest(new { success = false, message = "Email và họ tên là bắt buộc" });
+                }
+
+                // Kiểm tra email đã tồn tại
+                var existing = _context.Customers.FirstOrDefault(c => c.Email == request.Email);
+                if (existing != null)
+                {
+                    return Conflict(new { success = false, message = "Email đã được sử dụng" });
+                }
+
+                var customer = new Customer
+                {
+                    HoTen = request.HoTen,
+                    Email = request.Email,
+                    Sdt = request.Sdt,
+                    DiaChi = request.DiaChi,
+                    MatKhau = request.MatKhau ?? "123456", // Mật khẩu mặc định
+                    IsAdmin = request.IsAdmin ?? false,
+                    IdAccountTypes = 1
+                };
+
+                _context.Customers.Add(customer);
+                _context.SaveChanges();
+
+                return Ok(new { success = true, message = "Thêm người dùng thành công" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { success = false, message = "Lỗi khi thêm người dùng", error = ex.Message });
+            }
+        }
+
+        // Admin: Cập nhật người dùng
+        [HttpPut("CapNhatNguoiDung/{id}")]
+        [Authorize]
+        public IActionResult CapNhatNguoiDung(int id, [FromBody] CapNhatNguoiDungRequest request)
+        {
+            try
+            {
+                var isAdminClaim = User.Claims.FirstOrDefault(c => c.Type == "isAdmin");
+                if (isAdminClaim == null || isAdminClaim.Value != "True")
+                {
+                    return Forbid();
+                }
+
+                var customer = _context.Customers.FirstOrDefault(c => c.Id == id);
+                if (customer == null)
+                {
+                    return NotFound(new { success = false, message = "Không tìm thấy người dùng" });
+                }
+
+                if (!string.IsNullOrWhiteSpace(request.HoTen))
+                    customer.HoTen = request.HoTen;
+                if (!string.IsNullOrWhiteSpace(request.Sdt))
+                    customer.Sdt = request.Sdt;
+                if (!string.IsNullOrWhiteSpace(request.DiaChi))
+                    customer.DiaChi = request.DiaChi;
+                if (request.IsAdmin.HasValue)
+                    customer.IsAdmin = request.IsAdmin.Value;
+                if (!string.IsNullOrWhiteSpace(request.MatKhau))
+                    customer.MatKhau = request.MatKhau;
+
+                _context.Customers.Update(customer);
+                _context.SaveChanges();
+
+                return Ok(new { success = true, message = "Cập nhật người dùng thành công" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { success = false, message = "Lỗi khi cập nhật người dùng", error = ex.Message });
+            }
+        }
+
+        // Admin: Xóa người dùng
+        [HttpDelete("XoaNguoiDung/{id}")]
+        [Authorize]
+        public IActionResult XoaNguoiDung(int id)
+        {
+            try
+            {
+                var isAdminClaim = User.Claims.FirstOrDefault(c => c.Type == "isAdmin");
+                if (isAdminClaim == null || isAdminClaim.Value != "True")
+                {
+                    return Forbid();
+                }
+
+                var customer = _context.Customers.FirstOrDefault(c => c.Id == id);
+                if (customer == null)
+                {
+                    return NotFound(new { success = false, message = "Không tìm thấy người dùng" });
+                }
+
+                _context.Customers.Remove(customer);
+                _context.SaveChanges();
+
+                return Ok(new { success = true, message = "Xóa người dùng thành công" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { success = false, message = "Lỗi khi xóa người dùng", error = ex.Message });
+            }
+        }
+
         [HttpPost("GuiEmail")]
         public async Task<IActionResult> GuiEmail([FromBody] GuiEmailRequest request)
         {
@@ -513,6 +678,25 @@ namespace BE_DACK.Controllers
         public class ForgotPasswordRequest
         {
             public string Email { get; set; }
+        }
+
+        public class ThemNguoiDungRequest
+        {
+            public string HoTen { get; set; } = null!;
+            public string Email { get; set; } = null!;
+            public string? Sdt { get; set; }
+            public string? DiaChi { get; set; }
+            public string? MatKhau { get; set; }
+            public bool? IsAdmin { get; set; }
+        }
+
+        public class CapNhatNguoiDungRequest
+        {
+            public string? HoTen { get; set; }
+            public string? Sdt { get; set; }
+            public string? DiaChi { get; set; }
+            public string? MatKhau { get; set; }
+            public bool? IsAdmin { get; set; }
         }
 
     }

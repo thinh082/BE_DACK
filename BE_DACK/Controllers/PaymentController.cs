@@ -1,22 +1,37 @@
 ﻿using BE_DACK.Models.Entities;
+using BE_DACK.Models.Model;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using QuanLyDatVeMayBay.Services.VnpayServices;
+using QuanLyDatVeMayBay.Services.VnpayServices.Enums;
+using VNPAY.NET.Models;
+using VNPAY.NET.Utilities;
 
 namespace BE_DACK.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [Authorize]
+    
     public class PaymentController : ControllerBase
     {
         private readonly DACKContext _context;
 
-        public PaymentController(DACKContext context)
+        private readonly IConfiguration _configuration;
+
+        private readonly IVnpay _vnpay;
+
+        private readonly IOptions<VNPaySettings> _cfg;
+        public PaymentController(DACKContext context , IConfiguration configuration , IVnpay vnpay , IOptions<VNPaySettings> cfg)
         {
             _context = context;
+            _configuration = configuration;
+            _vnpay = vnpay;
+            _cfg = cfg;
         }
-
+        [Authorize]
         // Tạo thanh toán cho đơn hàng
         [HttpPost("ThanhToan")]
         public async Task<IActionResult> ThanhToan([FromBody] ThanhToanDto dto)
@@ -75,7 +90,7 @@ namespace BE_DACK.Controllers
                 }
 
                 // Validate phương thức thanh toán
-                var phuongThucHopLe = new[] { "Tiền mặt", "Chuyển khoản", "Thẻ tín dụng", "Ví điện tử", "COD" };
+                var phuongThucHopLe = new[] { "VNPAY", "COD" };
                 if (!phuongThucHopLe.Contains(dto.PhuongThucThanhToan))
                 {
                     return BadRequest(new
@@ -85,17 +100,21 @@ namespace BE_DACK.Controllers
                     });
                 }
 
+
+
+
                 // Tạo thanh toán mới
                 var thanhToan = new Payment
                 {
                     OrderId = dto.OrderId,
                     NgayThanhToan = DateTime.Now,
                     SoTienThanhToan = dto.SoTien,
-                    PhuongThucThanhToan = dto.PhuongThucThanhToan,
-                    TrangThai = "Thành công" // Có thể mở rộng thành "Đang xử lý" cho các cổng thanh toán online
+                    PhuongThucThanhToan = dto.PhuongThucThanhToan,//
+                    TrangThai = "Chờ thanh toán" // Có thể mở rộng thành "Đang xử lý" cho các cổng thanh toán online
                 };
 
                 _context.Payments.Add(thanhToan);
+
 
                 // Cập nhật trạng thái đơn hàng
                 tongDaThanhToan += dto.SoTien;
@@ -116,12 +135,41 @@ namespace BE_DACK.Controllers
                 }
 
                 await _context.SaveChangesAsync();
+                if (dto.PhuongThucThanhToan == "VNPAY")
+                {
+                    var cfg = _cfg.Value;
 
+                    _vnpay.Initialize(
+                      cfg.vnp_TmnCode,
+                      cfg.vnp_HashSecret,
+                      cfg.vnp_ReturnUrl,
+                      cfg.vnp_Url
+                     );
+
+                    var ipAddress = NetworkHelper.GetIpAddress(HttpContext);
+                    var request = new PaymentRequest
+                    {
+                        PaymentId = thanhToan.Id,
+                        Money = (double)tongDaThanhToan,
+                        Description = "Thanh toán đồ nội thất!",
+                        IpAddress = ipAddress,
+                        CreatedDate = DateTime.Now,
+                        Currency = Currency.VND,
+                        Language = DisplayLanguage.Vietnamese
+                    };
+                    var url = _vnpay.GetPaymentUrl(request);
+                    return Ok(new
+                    {
+                        code = 202,
+                        url = url
+                    });
+
+                }
                 return Ok(new
                 {
                     success = true,
                     message = "Thanh toán thành công.",
-                    data = new
+                    /*data = new
                     {
                         paymentId = thanhToan.Id,
                         orderId = donHang.Id,
@@ -131,7 +179,7 @@ namespace BE_DACK.Controllers
                         trangThaiDonHang = donHang.TrangThai,
                         tongDaThanhToan = tongDaThanhToan,
                         conLai = donHang.TongGiaTriDonHang - tongDaThanhToan
-                    }
+                    }*/
                 });
             }
             catch (Exception ex)
@@ -144,7 +192,7 @@ namespace BE_DACK.Controllers
                 });
             }
         }
-
+        [Authorize]
         // Lấy lịch sử thanh toán của 1 đơn hàng
         [HttpGet("LichSuThanhToan/{orderId}")]
         public async Task<IActionResult> LichSuThanhToan(int orderId)
@@ -206,7 +254,7 @@ namespace BE_DACK.Controllers
                 });
             }
         }
-
+        [Authorize]
         // Lấy tất cả thanh toán của user
         [HttpGet("TatCaThanhToan")]
         public async Task<IActionResult> TatCaThanhToan()
@@ -252,7 +300,7 @@ namespace BE_DACK.Controllers
                 });
             }
         }
-
+        [Authorize]
         // Kiểm tra trạng thái thanh toán đơn hàng
         [HttpGet("KiemTraThanhToan/{orderId}")]
         public async Task<IActionResult> KiemTraThanhToan(int orderId)
@@ -305,7 +353,7 @@ namespace BE_DACK.Controllers
                 });
             }
         }
-
+        [Authorize]
         // Hủy thanh toán (chỉ trong trường hợp đặc biệt)
         [HttpPut("HuyThanhToan/{paymentId}")]
         public async Task<IActionResult> HuyThanhToan(int paymentId)
@@ -387,6 +435,176 @@ namespace BE_DACK.Controllers
                     error = ex.Message
                 });
             }
+
+
+           
+
+        }
+
+        [HttpGet("ReturnVnPay")]
+        public async Task<IActionResult> ReturnVnPay()
+        {
+            if (Request.QueryString.HasValue)
+            {
+                try
+                {
+                    var paymentResult = _vnpay.GetPaymentResult(Request.Query);
+                    var ThanhToan = await _context.Payments.FindAsync((int)paymentResult.PaymentId);
+                    if (ThanhToan == null)
+                    {
+                        return BadRequest(new
+                        {
+                            message = "Không tìm thấy thông tin thanh toán"
+                        });
+                    }
+                    ThanhToan.TrangThai = "Đã thanh toán thành công!";
+                    _context.Payments.Update(ThanhToan);
+
+                    await _context.SaveChangesAsync();
+
+
+                    string html = @"
+<!DOCTYPE html>
+<html lang='vi'>
+<head>
+    <meta charset='UTF-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+    <title>Thanh toán thành công - Decora</title>
+    <link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap' rel='stylesheet'>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            font-weight: 400;
+            line-height: 28px;
+            color: #6a6a6a;
+            font-size: 14px;
+            background-color: #eff2f1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .success-container {
+            background-color: #ffffff;
+            text-align: center;
+            padding: 60px 40px;
+            border-radius: 16px;
+            box-shadow: 0 6px 25px rgba(0, 0, 0, 0.1);
+            max-width: 500px;
+            width: 100%;
+        }
+        .checkmark-icon {
+            width: 80px;
+            height: 80px;
+            background-color: #3b5d50;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 30px;
+            color: #ffffff;
+            font-size: 48px;
+            font-weight: 700;
+        }
+        h1 {
+            font-weight: 700;
+            color: #2f2f2f;
+            margin-bottom: 15px;
+            font-size: 32px;
+        }
+        .success-message {
+            color: #6a6a6a;
+            margin-bottom: 30px;
+            font-size: 16px;
+            line-height: 1.6;
+        }
+        .countdown {
+            color: #3b5d50;
+            font-weight: 600;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        .btn {
+            font-weight: 600;
+            padding: 12px 30px;
+            border-radius: 8px;
+            color: #ffffff;
+            font-size: 0.9rem;
+            background: #2f2f2f;
+            border-color: #2f2f2f;
+            text-decoration: none;
+            display: inline-block;
+            transition: all 0.2s ease;
+            border: none;
+            cursor: pointer;
+        }
+        .btn:hover {
+            background: #3b5d50;
+            border-color: #3b5d50;
+            color: #ffffff;
+            text-decoration: none;
+        }
+        .btn-secondary {
+            background: #f9bf29;
+            border-color: #f9bf29;
+            color: #2f2f2f;
+            margin-left: 15px;
+        }
+        .btn-secondary:hover {
+            background: #e6a91f;
+            border-color: #e6a91f;
+            color: #2f2f2f;
+        }
+    </style>
+    <script>
+        let countdown = 5;
+        const countdownElement = document.getElementById('countdown');
+        
+        function updateCountdown() {
+            if (countdownElement) {
+                countdownElement.textContent = 'Tự động chuyển về trang chủ sau ' + countdown + ' giây...';
+            }
+            countdown--;
+            if (countdown < 0) {
+                window.location.href = 'http://localhost:5173/';
+            }
+        }
+        
+        window.onload = function() {
+            setInterval(updateCountdown, 1000);
+        };
+    </script>
+</head>
+<body>
+    <div class='success-container'>
+        <div class='checkmark-icon'>✓</div>
+        <h1>Thanh toán thành công!</h1>
+        <p class='success-message'>Cảm ơn bạn đã mua hàng tại Decora.<br>Đơn hàng của bạn đang được xử lý và sẽ được giao trong thời gian sớm nhất.</p>
+        <p class='countdown' id='countdown'>Tự động chuyển về trang chủ sau 5 giây...</p>
+        <div>
+            <a href='http://localhost:5173/' class='btn'>Về trang chủ</a>
+            <a href='http://localhost:5173/orders.html' class='btn btn-secondary'>Xem đơn hàng</a>
+        </div>
+    </div>
+</body>
+</html>";
+
+                    return Content(html, "text/html");
+
+                }
+                catch (Exception ex)
+                {
+                    return BadRequest(new { success = false, message = "Lỗi thanh toán." });
+                }
+            }
+
+            return NotFound("có gì đó xảy ra rồi");
         }
     }
 

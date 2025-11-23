@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using QuanLyDatVeMayBay.Services.VnpayServices;
 using System.Text;
 using WebAppDoCongNghe.Service;
 
@@ -52,6 +53,11 @@ builder.Services.AddSingleton(provider =>
 
 // Đăng ký CloudinaryService
 builder.Services.AddScoped<ICloudinaryService, Cloud>();
+
+builder.Services.Configure<VNPaySettings>(builder.Configuration.GetSection("VNPay"));
+builder.Services.AddSingleton<IVnpay, Vnpay>();
+
+
 
 
 builder.Services.AddCors(options =>

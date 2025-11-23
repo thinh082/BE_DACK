@@ -7,6 +7,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="Service\VNPAY.NET\VNPAY.NET.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="CloudinaryDotNet" Version="1.27.8" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.16" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.21" />
@@ -17,6 +21,12 @@
     </PackageReference>
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="7.1.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Service\VNPAY.NET\bin\Debug\net8.0\" />
+    <Folder Include="Service\VNPAY.NET\obj\Debug\net8.0\refint\" />
+    <Folder Include="Service\VNPAY.NET\obj\Debug\net8.0\ref\" />
   </ItemGroup>
 
 </Project>

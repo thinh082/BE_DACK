@@ -1,4 +1,5 @@
 ﻿using BE_DACK.Models.Entities;
+using BE_DACK.Helpers;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -78,6 +79,10 @@ namespace BE_DACK.Controllers
 
                 await _context.SaveChangesAsync();
 
+                // Tính giá sau khuyến mãi
+                var giaSauKhuyenMai = await PriceHelper.TinhGiaSauKhuyenMai(_context, product.Id, product.Gia);
+                var khuyenMai = await PriceHelper.LayThongTinKhuyenMai(_context, product.Id);
+
                 return Ok(new
                 {
                     success = true,
@@ -88,7 +93,9 @@ namespace BE_DACK.Controllers
                         productId = product.Id,
                         tenSp = product.TenSp,
                         soLuong = dto.SoLuong,
-                        gia = product.Gia
+                        giaGoc = product.Gia,
+                        giaSauKhuyenMai = giaSauKhuyenMai,
+                        khuyenMai = khuyenMai
                     }
                 });
             }
@@ -113,10 +120,11 @@ namespace BE_DACK.Controllers
                 if (userId <= 0)
                     return Unauthorized(new { success = false, message = "Không thể xác định người dùng từ token." });
 
+                // Lấy giỏ hàng kèm Product & Images
                 var gioHang = await _context.ShoppingCarts
                     .Include(g => g.ShoppingCartDetails)
                         .ThenInclude(d => d.Product)
-                            .ThenInclude(p => p.ProductImages) // Thêm dòng này
+                            .ThenInclude(p => p.ProductImages)
                     .FirstOrDefaultAsync(g => g.CustomerId == userId);
 
                 if (gioHang == null || gioHang.ShoppingCartDetails.Count == 0)
@@ -125,31 +133,59 @@ namespace BE_DACK.Controllers
                     {
                         success = true,
                         message = "Giỏ hàng hiện đang trống.",
+                        tongSoLuong = 0,
+                        tongTienGoc = 0,
+                        tongTienSauKhuyenMai = 0,
+                        tongTietKiem = 0,
                         data = new List<object>()
                     });
                 }
 
-                var danhSach = gioHang.ShoppingCartDetails.Select(d => new
+                // ⭐ KHÔNG DÙNG Task.WhenAll — chạy tuần tự để tránh lỗi DbContext
+                var danhSach = new List<object>();
+
+                foreach (var d in gioHang.ShoppingCartDetails)
                 {
-                    productId = d.ProductId,
-                    tenSp = d.Product.TenSp,
-                    gia = d.Product.Gia,
-                    soLuong = d.SoLuongTrongGh,
-                    thanhTien = d.SoLuongTrongGh * d.Product.Gia,
-                    hinhAnh = d.Product.ProductImages.Select(img => new
+                    // Tính giá sau khuyến mãi (sử dụng DbContext chung, nhưng theo từng vòng)
+                    var giaSauKhuyenMai = await PriceHelper.TinhGiaSauKhuyenMai(
+                        _context,
+                        d.ProductId.Value,
+                        d.Product.Gia
+                    );
+
+                    var khuyenMai = await PriceHelper.LayThongTinKhuyenMai(
+                        _context,
+                        d.ProductId.Value
+                    );
+
+                    danhSach.Add(new
                     {
-                        id = img.Id,
-                        productId = img.ProductId,
-                        url = img.HinhAnh
-                    }).ToList()
-                }).ToList();
+                        productId = d.ProductId,
+                        tenSp = d.Product.TenSp,
+                        giaGoc = d.Product.Gia,
+                        giaSauKhuyenMai = giaSauKhuyenMai,
+                        soLuong = d.SoLuongTrongGh,
+                        thanhTienGoc = d.SoLuongTrongGh * d.Product.Gia,
+                        thanhTienSauKhuyenMai = d.SoLuongTrongGh * giaSauKhuyenMai,
+                        tietKiem = d.SoLuongTrongGh * (d.Product.Gia - giaSauKhuyenMai),
+                        khuyenMai = khuyenMai,
+                        hinhAnh = d.Product.ProductImages.Select(img => new
+                        {
+                            id = img.Id,
+                            productId = img.ProductId,
+                            url = img.HinhAnh
+                        }).ToList()
+                    });
+                }
 
                 return Ok(new
                 {
                     success = true,
                     message = "Lấy giỏ hàng thành công.",
-                    tongSoLuong = danhSach.Sum(x => x.soLuong),
-                    tongTien = danhSach.Sum(x => x.thanhTien),
+                    tongSoLuong = danhSach.Sum(x => (int)x.GetType().GetProperty("soLuong").GetValue(x)),
+                    tongTienGoc = danhSach.Sum(x => (decimal)x.GetType().GetProperty("thanhTienGoc").GetValue(x)),
+                    tongTienSauKhuyenMai = danhSach.Sum(x => (decimal)x.GetType().GetProperty("thanhTienSauKhuyenMai").GetValue(x)),
+                    tongTietKiem = danhSach.Sum(x => (decimal)x.GetType().GetProperty("tietKiem").GetValue(x)),
                     data = danhSach
                 });
             }
@@ -163,6 +199,7 @@ namespace BE_DACK.Controllers
                 });
             }
         }
+
 
         //Xóa sản phẩm khỏi giỏ
         [HttpDelete("XoaKhoiGio/{productId}")]
@@ -201,6 +238,61 @@ namespace BE_DACK.Controllers
                 {
                     success = false,
                     message = "Lỗi khi xóa sản phẩm khỏi giỏ hàng.",
+                    error = ex.Message
+                });
+            }
+        }
+
+        // Admin: Lấy danh sách tất cả giỏ hàng
+        [HttpGet("DanhSachGioHang")]
+        [Authorize]
+        public async Task<IActionResult> DanhSachGioHang()
+        {
+            try
+            {
+                // Kiểm tra quyền admin
+                var isAdminClaim = User.Claims.FirstOrDefault(c => c.Type == "isAdmin");
+                if (isAdminClaim == null || isAdminClaim.Value != "True")
+                {
+                    return Forbid();
+                }
+
+                var gioHangs = await _context.ShoppingCarts
+                    .Include(g => g.Customer)
+                    .Include(g => g.ShoppingCartDetails)
+                        .ThenInclude(d => d.Product)
+                    .ToListAsync();
+
+                var result = gioHangs.Select(g => new
+                {
+                    id = g.Id,
+                    customerId = g.CustomerId,
+                    khachHang = g.Customer != null ? new
+                    {
+                        id = g.Customer.Id,
+                        hoTen = g.Customer.HoTen,
+                        email = g.Customer.Email
+                    } : null,
+                    soSanPham = g.ShoppingCartDetails.Count,
+                    tongTien = g.ShoppingCartDetails
+                        .Where(d => d.Product != null)
+                        .Sum(d => d.SoLuongTrongGh.GetValueOrDefault() * d.Product.Gia)
+                }).ToList();
+
+                return Ok(new
+                {
+                    success = true,
+                    message = "Lấy danh sách giỏ hàng thành công",
+                    data = result,
+                    total = result.Count
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    success = false,
+                    message = "Lỗi khi lấy danh sách giỏ hàng",
                     error = ex.Message
                 });
             }
